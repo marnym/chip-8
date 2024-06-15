@@ -1,5 +1,6 @@
 const std = @import("std");
 const Display = @import("Display.zig").Display;
+const Stack = @import("Stack.zig").Stack;
 
 pub const Chip8 = @This();
 
@@ -26,11 +27,23 @@ memory: [4096]u8,
 I: u16,
 pc: u16,
 display: Display,
+stack: Stack,
 
-pub fn init() Chip8 {
-    var chip8 = std.mem.zeroes(Chip8);
+pub fn init(stack_mem: *[32]u8) !Chip8 {
+    var chip8 = Chip8{
+        .memory = std.mem.zeroes([4096]u8),
+        .I = 0,
+        .pc = 0,
+        .display = std.mem.zeroes(Display),
+        .stack = try Stack.init(stack_mem),
+    };
+
     for (font, 0x50..0xA0) |f, i| {
         chip8.memory[i] = f;
     }
     return chip8;
+}
+
+pub fn deinit(self: *Chip8) void {
+    self.stack.deinit();
 }
