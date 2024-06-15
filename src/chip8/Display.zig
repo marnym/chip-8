@@ -23,6 +23,26 @@ pub fn getXYScaled(self: Display, x: usize, y: usize) ?Tuple(&.{ usize, usize })
     }
 }
 
+pub fn turnOn(self: *Display, x: usize, y: usize) void {
+    std.debug.assert(x < x_dim);
+    std.debug.assert(y < y_dim);
+    self.display[x][y] = true;
+}
+
+pub fn turnOff(self: *Display, x: usize, y: usize) void {
+    std.debug.assert(x < x_dim);
+    std.debug.assert(y < y_dim);
+    self.display[x][y] = false;
+}
+
+pub fn clear(self: *Display) void {
+    for (0..x_dim) |x| {
+        for (0..y_dim) |y| {
+            self.display[x][y] = false;
+        }
+    }
+}
+
 test "getXY empty" {
     const testing = std.testing;
     const display = std.mem.zeroes(Display);
@@ -69,4 +89,18 @@ test "getXYScaled" {
     {
         try testing.expectEqual(.{ (x_dim - 1) * scale, (y_dim - 1) * scale }, display.getXYScaled(x_dim - 1, y_dim - 1));
     }
+}
+
+test "clear" {
+    const testing = std.testing;
+    var display = std.mem.zeroes(Display);
+    display.display[0][0] = true;
+    display.display[1][1] = true;
+    display.display[x_dim - 1][y_dim - 1] = true;
+
+    display.clear();
+
+    try testing.expectEqual(false, display.getXY(0, 0));
+    try testing.expectEqual(false, display.getXY(1, 1));
+    try testing.expectEqual(false, display.getXY(x_dim - 1, y_dim - 1));
 }
