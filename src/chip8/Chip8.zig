@@ -28,6 +28,8 @@ I: u16,
 pc: u16,
 display: Display,
 stack: Stack,
+delay_timer: u8,
+sound_timer: u8,
 
 pub fn init(stack_mem: *[32]u8) !Chip8 {
     var chip8 = Chip8{
@@ -36,6 +38,8 @@ pub fn init(stack_mem: *[32]u8) !Chip8 {
         .pc = 0,
         .display = std.mem.zeroes(Display),
         .stack = try Stack.init(stack_mem),
+        .delay_timer = 0,
+        .sound_timer = 0,
     };
 
     for (font, 0x50..0xA0) |f, i| {
