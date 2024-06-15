@@ -9,30 +9,21 @@
       });
     in
     {
-      devShells = forEachSupportedSystem
-        ({ pkgs }:
-          let
-            frameworks = pkgs.darwin.apple_sdk.frameworks;
-          in
-          {
-            default = pkgs.mkShell {
-              buildInputs = with frameworks; [
-                Carbon
-                Cocoa
-                Foundation
-                CoreFoundation
-                SystemConfiguration
-                CoreServices
-                CoreAudio
-                CoreGraphics
-                AppKit
-                IOKit
-              ];
-              packages = with pkgs; [ zig zls ];
-              shellHook = ''
-                NIX_CFLAGS_COMPILE="$(echo "$NIX_CFLAGS_COMPILE" | sed -e "s/-isysroot [^ ]*//")"
-              '';
-            };
-          });
+      devShells = forEachSupportedSystem ({ pkgs }: {
+        default = pkgs.mkShell {
+          buildInputs = with pkgs; [
+            glfw
+            mesa
+            xorg.libXi
+            xorg.libXcursor
+            xorg.libXrandr
+            xorg.libXinerama
+          ];
+
+          propagatedBuildInputs = with pkgs; [ libGLU xorg.libX11 ];
+
+          packages = with pkgs; [ zig zls ];
+        };
+      });
     };
 }
