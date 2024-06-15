@@ -4,6 +4,8 @@ const Stack = @import("Stack.zig").Stack;
 
 pub const Chip8 = @This();
 
+const OpCode = enum { not_implemented };
+
 const font = [_]u8{
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -50,4 +52,24 @@ pub fn init(stack_mem: *[32]u8) !Chip8 {
 
 pub fn deinit(self: *Chip8) void {
     self.stack.deinit();
+}
+
+pub fn loop(self: *Chip8) void {
+    const instruction = self.fetch();
+    const code = self.decode(instruction);
+    self.execute(code);
+}
+
+fn fetch(self: Chip8) u16 {
+    return self.memory[self.pc];
+}
+
+fn decode(instruction: u16) OpCode {
+    switch (instruction) {
+        else => return OpCode.not_implemented,
+    }
+}
+
+fn execute(code: OpCode) void {
+    _ = code;
 }
