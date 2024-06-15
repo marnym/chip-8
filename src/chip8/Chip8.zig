@@ -26,6 +26,7 @@ const font = [_]u8{
 };
 
 memory: [4096]u8,
+registers: [16]u8,
 I: u16,
 pc: u16,
 display: Display,
@@ -36,6 +37,7 @@ sound_timer: u8,
 pub fn init(stack_mem: *[32]u8) !Chip8 {
     var chip8 = Chip8{
         .memory = std.mem.zeroes([4096]u8),
+        .registers = std.mem.zeroes([16]u8),
         .I = 0,
         .pc = 0,
         .display = std.mem.zeroes(Display),
