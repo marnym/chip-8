@@ -1,3 +1,8 @@
+const std = @import("std");
+const Display = @import("Display.zig").Display;
+
+pub const Chip8 = @This();
+
 const font = [_]u8{
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -17,22 +22,15 @@ const font = [_]u8{
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 };
 
-pub const Chip8 = struct {
-    memory: [4096]u8,
-    I: u16,
-    pc: u16,
+memory: [4096]u8,
+I: u16,
+pc: u16,
+display: Display,
 
-    pub fn init() Chip8 {
-        var chip8 = Chip8{
-            .memory = undefined,
-            .I = 0,
-            .pc = 0,
-        };
-
-        for (font, 0x50..0xA0) |f, i| {
-            chip8.memory[i] = f;
-        }
-
-        return chip8;
+pub fn init() Chip8 {
+    var chip8 = std.mem.zeroes(Chip8);
+    for (font, 0x50..0xA0) |f, i| {
+        chip8.memory[i] = f;
     }
-};
+    return chip8;
+}

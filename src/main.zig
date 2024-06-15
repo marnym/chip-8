@@ -1,20 +1,27 @@
 const std = @import("std");
 const raylib = @import("raylib.zig");
-const Chip8 = @import("chip8.zig").Chip8;
+const Chip8 = @import("chip8/CHIP-8.zig").Chip8;
+const Display = @import("chip8/Display.zig").Display;
 
 pub fn main() !void {
-    raylib.InitWindow(800, 540, "raylib [core] example - basic window");
+    raylib.SetTraceLogLevel(raylib.LOG_ERROR);
+    raylib.InitWindow(Display.x_dim * Display.scale, Display.y_dim * Display.scale, "CHIP-8");
     defer raylib.CloseWindow();
 
-    raylib.SetTargetFPS(120);
+    raylib.SetTargetFPS(60);
 
-    const chip8 = Chip8.init();
-    _ = chip8;
+    var chip8 = Chip8.init();
 
     while (!raylib.WindowShouldClose()) {
         raylib.BeginDrawing();
-        raylib.ClearBackground(raylib.RAYWHITE);
-        raylib.DrawText("Congrats! You created your first window!", 190, 200, 20, raylib.LIGHTGRAY);
-        raylib.EndDrawing();
+        defer raylib.EndDrawing();
+        raylib.ClearBackground(raylib.BLACK);
+        for (0..Display.x_dim) |x| {
+            for (0..Display.y_dim) |y| {
+                if (chip8.display.getXYScaled(x, y)) |scaled| {
+                    raylib.DrawRectangle(@intCast(scaled.@"0"), @intCast(scaled.@"1"), Display.scale, Display.scale, raylib.WHITE);
+                }
+            }
+        }
     }
 }
