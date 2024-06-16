@@ -166,7 +166,8 @@ fn execute(self: *Chip8, opcode: u16) !void {
             self.V(x).* = @truncate(nn);
         },
         0x7 => { // add
-            self.V(x).* += @truncate(nn);
+            const vx = self.V(x);
+            vx.* = @addWithOverflow(vx.*, nn)[0];
         },
         0x8 => switch (n) { // check last nibble
             0x0 => { // set VX to VY
@@ -192,27 +193,23 @@ fn execute(self: *Chip8, opcode: u16) !void {
                 const vx = self.V(x);
                 const vy = self.V(y).*;
                 self.VF().* = if (vx.* >= vy) 1 else 0;
-                vx.* -= vy;
+                vx.* = @subWithOverflow(vx.*, vy)[0];
             },
             0x6 => { // shift right
                 const vx = self.V(x);
-                vx.* = self.V(y).*;
-                const outshifted_bit = vx.* & 0x1;
+                self.VF().* = vx.* & 0x1;
                 vx.* >>= 1;
-                self.VF().* = outshifted_bit;
             },
             0x7 => { // subtract VY - VX
                 const vx = self.V(x);
                 const vy = self.V(y).*;
                 self.VF().* = if (vy >= vx.*) 1 else 0;
-                vx.* = vy - vx.*;
+                vx.* = @subWithOverflow(vy, vx.*)[0];
             },
             0xE => { // shift left
                 const vx = self.V(x);
-                vx.* = self.V(y).*;
-                const outshifted_bit = (vx.* >> 7) & 0x1;
-                vx.* >>= 1;
-                self.VF().* = outshifted_bit;
+                self.VF().* = (vx.* >> 7) & 0x1;
+                vx.* <<= 1;
             },
             else => unreachable,
         },
