@@ -81,9 +81,7 @@ pub fn cycle(self: *Chip8, amount: usize) bool {
         self.delay_timer -= 1;
     }
     if (self.sound_timer > 0) {
-        if (self.sound_timer == 1) {
-            std.debug.print("BEEP!\n", .{});
-        }
+        std.debug.print("BEEP!\n", .{});
         self.sound_timer -= 1;
     }
 
@@ -109,23 +107,47 @@ fn execute(self: *Chip8, opcode: u16) void {
     const nnn: u16 = @truncate(opcode & 0x0FFF); // 2nd, 3rd and 4th nibbles
 
     return switch (kind) {
-        0x0 => switch (n) {
+        0x0 => switch (n) { // check 4th nibble
             0x0 => { // clear screen
                 self.display.clear();
             },
             0xE => { // return from subroutine
-
+                self.program_counter = self.stack.pop();
             },
             else => unreachable,
         },
         0x1 => { // jump
             self.program_counter = nnn;
         },
+        0x2 => { // enter subroutine
+            self.stack.push(self.program_counter);
+            self.program_counter = nnn;
+        },
+        0x3 => { // skip if VX == NN
+            if (self.registers[x] == nn) {
+                self.program_counter += 2;
+            }
+        },
+        0x4 => { // skip if VX != NN
+            if (self.registers[x] != nn) {
+                self.program_counter += 2;
+            }
+        },
+        0x5 => { // skip if VX == VY
+            if (self.registers[x] == self.registers[y]) {
+                self.program_counter += 2;
+            }
+        },
         0x6 => { // set
             self.registers[x] = @truncate(nn);
         },
         0x7 => { // add
             self.registers[x] += @truncate(nn);
+        },
+        0x9 => { // skip if VX != VY
+            if (self.registers[x] != self.registers[y]) {
+                self.program_counter += 2;
+            }
         },
         0xA => { // set index
             self.index = nnn;

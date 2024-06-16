@@ -28,6 +28,6 @@ pub fn push(self: *Stack, item: ItemType) StackError!void {
     }
 }
 
-pub fn pop(self: *Stack) ?ItemType {
-    return self.stack.popOrNull();
+pub fn pop(self: *Stack) ItemType {
+    return self.stack.pop();
 }
