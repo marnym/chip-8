@@ -75,8 +75,7 @@ pub fn load(self: *Chip8, rom: []const u8) void {
     self.program_counter = load_location;
 }
 
-/// returns `true` if this should be the last cycle
-pub fn cycle(self: *Chip8) !bool {
+pub fn cycle(self: *Chip8) !void {
     const opcode = self.fetch();
     try self.execute(opcode);
 
@@ -92,8 +91,6 @@ pub fn cycle(self: *Chip8) !bool {
     if (!is_key_pressed_opcode) {
         self.key_manager.empty_keys_pressed();
     }
-
-    return false;
 }
 
 /// shortcut for `self.registers[z]`

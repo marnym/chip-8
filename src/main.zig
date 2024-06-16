@@ -18,17 +18,19 @@ pub fn render(chip8: Chip8) void {
 }
 
 pub fn main() !void {
+    // ensure that all output is on own line
     std.debug.print("\n", .{});
     raylib.SetTraceLogLevel(raylib.LOG_ERROR);
     raylib.InitWindow(Display.x_dim * Display.scale, Display.y_dim * Display.scale, "CHIP-8");
     defer raylib.CloseWindow();
 
+    // perfect for decrementing timers 60 times per second
     raylib.SetTargetFPS(60);
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
     {
+        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        const allocator = gpa.allocator();
+
         var stack_mem: [32]u8 = undefined;
         var chip8 = try Chip8.init(&stack_mem, KeyManager{});
         defer chip8.deinit();
@@ -38,15 +40,10 @@ pub fn main() !void {
 
         chip8.load(rom);
 
-        var should_stop = false;
         const instructions_per_second = 12;
         while (!raylib.WindowShouldClose()) {
-            if (should_stop) continue;
-
             for (0..instructions_per_second) |_| {
-                should_stop = try chip8.cycle();
-                if (should_stop) break;
-
+                try chip8.cycle();
                 render(chip8);
             }
         }
