@@ -55,23 +55,58 @@ pub fn deinit(self: *Chip8) void {
     self.stack.deinit();
 }
 
-pub fn loop(self: *Chip8) void {
-    const opcode = self.fetch();
-    self.execute(opcode);
+pub fn loadRom(filename: []const u8, allocator: std.mem.Allocator) ![]u8 {
+    const cwd = std.fs.cwd();
+    return try cwd.readFileAlloc(allocator, filename, 4096);
 }
 
-fn fetch(self: Chip8) u16 {
+pub fn load(self: *Chip8, rom: []const u8) void {
+    const load_location = 0x200;
+    std.mem.copyForwards(u8, self.memory[load_location..], rom);
+    self.program_counter = load_location;
+}
+
+/// returns `true` if this should be the last cycle
+pub fn cycle(self: *Chip8, amount: usize) bool {
+    for (0..amount) |_| {
+        const opcode = self.fetch();
+        // TODO: Remove hardcoded halt instruction for IBM
+        if (opcode == 0x1228) {
+            return true;
+        }
+        self.execute(opcode);
+    }
+
+    if (self.delay_timer > 0) {
+        self.delay_timer -= 1;
+    }
+    if (self.sound_timer > 0) {
+        if (self.sound_timer == 1) {
+            std.debug.print("BEEP!\n", .{});
+        }
+        self.sound_timer -= 1;
+    }
+
+    return false;
+}
+
+fn fetch(self: *Chip8) u16 {
     defer self.program_counter += 2;
-    return self.memory[self.program_counter] << 8 | self.memory[self.program_counter + 1];
+    var opcode: u16 = 0;
+    opcode |= self.memory[self.program_counter];
+    opcode <<= 8;
+    opcode |= self.memory[self.program_counter + 1];
+    std.debug.print("pc = 0x{X:0>4}\topcode = 0x{X:0>4}\n", .{ self.program_counter, opcode });
+    return opcode;
 }
 
 fn execute(self: *Chip8, opcode: u16) void {
-    const kind = opcode & 0xF000; // 1st nibble
-    const x = opcode & 0x0F00; // 2nd nibble
-    const y = opcode & 0x00F0; // 3rd nibble
-    const n = opcode & 0x000F; // 4th nibble
-    const nn = opcode & 0x00FF; // 3rd and 4th nibbles
-    const nnn = opcode & 0x0FFF; // 2nd, 3rd and 4th nibbles
+    const kind: u4 = @truncate((opcode & 0xF000) >> 12); // 1st nibble
+    const x: u16 = @truncate((opcode & 0x0F00) >> 8); // 2nd nibble
+    const y: u16 = @truncate((opcode & 0x00F0) >> 4); // 3rd nibble
+    const n: u16 = @truncate((opcode & 0x000F)); // 4th nibble
+    const nn: u16 = @truncate(opcode & 0x00FF); // 3rd and 4th nibbles
+    const nnn: u16 = @truncate(opcode & 0x0FFF); // 2nd, 3rd and 4th nibbles
 
     return switch (kind) {
         0x0 => switch (n) {
@@ -84,44 +119,43 @@ fn execute(self: *Chip8, opcode: u16) void {
             else => unreachable,
         },
         0x1 => { // jump
-            self.pc = nnn;
+            self.program_counter = nnn;
         },
         0x6 => { // set
-            self.registers[x] = nn;
+            self.registers[x] = @truncate(nn);
         },
         0x7 => { // add
-            self.registers[x] += nn;
+            self.registers[x] += @truncate(nn);
         },
         0xA => { // set index
-            self.I = nnn;
+            self.index = nnn;
         },
         0xD => { // display
-            var vx = self.registers[x] % Display.x_dim;
-            const vy = self.registers[y] % Display.y_dim;
+            const vx = self.registers[x] % Display.x_dim;
+            var vy = self.registers[y] % Display.y_dim;
 
             const vf = &self.registers[0xF];
             vf.* = 0;
 
             for (0..n) |i| {
                 const sprite_row = self.memory[self.index + i];
-                for (7..0) |bit| {
-                    const sprite_on = sprite_row & (1 << bit) == 1;
-                    if (sprite_on and self.display.getXY(vx, vy)) {
-                        self.display.turnOff(vx, vy);
+                for (0..8) |bit| {
+                    const sprite_on = (sprite_row >> @truncate(7 - bit)) & 1 == 1;
+                    const x_index = vx + bit;
+                    if (sprite_on and self.display.getXY(x_index, vy)) {
+                        self.display.turnOff(x_index, vy);
                         vf.* = 1;
-                    } else if (sprite_on and !self.display.getXY(vx, vy)) {
-                        self.display.turnOn(vx, vy);
+                    } else if (sprite_on and !self.display.getXY(x_index, vy)) {
+                        self.display.turnOn(x_index, vy);
                     }
 
-                    if (vx == Display.Display.x_dim) {
+                    if (x_index >= Display.Display.x_dim) {
                         break;
                     }
-
-                    vx += 1;
                 }
                 vy += 1;
 
-                if (vy == Display.Display.y_dim) {
+                if (vy >= Display.Display.y_dim) {
                     break;
                 }
             }

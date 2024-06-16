@@ -78,6 +78,7 @@ test "getXYScaled" {
     var display = std.mem.zeroes(Display);
     display.display[0][0] = true;
     display.display[1][1] = true;
+    display.display[2][2] = true;
     display.display[x_dim - 1][y_dim - 1] = true;
 
     {
@@ -85,6 +86,9 @@ test "getXYScaled" {
     }
     {
         try testing.expectEqual(.{ scale, scale }, display.getXYScaled(1, 1));
+    }
+    {
+        try testing.expectEqual(.{ scale * 2, scale * 2 }, display.getXYScaled(2, 2));
     }
     {
         try testing.expectEqual(.{ (x_dim - 1) * scale, (y_dim - 1) * scale }, display.getXYScaled(x_dim - 1, y_dim - 1));
