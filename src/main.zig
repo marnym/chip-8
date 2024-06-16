@@ -25,18 +25,22 @@ pub fn main() !void {
         chip8.load(rom);
 
         var should_stop = false;
+        const instructions_per_second = 12;
         while (!raylib.WindowShouldClose()) {
             if (should_stop) continue;
 
-            should_stop = chip8.cycle(12);
+            for (0..instructions_per_second) |_| {
+                should_stop = try chip8.cycle();
+                if (should_stop) break;
 
-            raylib.BeginDrawing();
-            defer raylib.EndDrawing();
-            raylib.ClearBackground(raylib.BLACK);
-            for (0..Display.x_dim) |x| {
-                for (0..Display.y_dim) |y| {
-                    if (chip8.display.getXYScaled(x, y)) |scaled| {
-                        raylib.DrawRectangle(@intCast(scaled.@"0"), @intCast(scaled.@"1"), Display.scale, Display.scale, raylib.WHITE);
+                raylib.BeginDrawing();
+                defer raylib.EndDrawing();
+                raylib.ClearBackground(raylib.BLACK);
+                for (0..Display.x_dim) |x| {
+                    for (0..Display.y_dim) |y| {
+                        if (chip8.display.getXYScaled(x, y)) |scaled| {
+                            raylib.DrawRectangle(@intCast(scaled.@"0"), @intCast(scaled.@"1"), Display.scale, Display.scale, raylib.WHITE);
+                        }
                     }
                 }
             }

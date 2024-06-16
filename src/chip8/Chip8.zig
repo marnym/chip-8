@@ -67,15 +67,13 @@ pub fn load(self: *Chip8, rom: []const u8) void {
 }
 
 /// returns `true` if this should be the last cycle
-pub fn cycle(self: *Chip8, amount: usize) bool {
-    for (0..amount) |_| {
-        const opcode = self.fetch();
-        // TODO: Remove hardcoded halt instruction for IBM
-        if (opcode == 0x1228) {
-            return true;
-        }
-        self.execute(opcode);
+pub fn cycle(self: *Chip8) !bool {
+    const opcode = self.fetch();
+    // TODO: Remove hardcoded halt instruction for IBM
+    if (opcode == 0x1228) {
+        return true;
     }
+    try self.execute(opcode);
 
     if (self.delay_timer > 0) {
         self.delay_timer -= 1;
@@ -88,17 +86,33 @@ pub fn cycle(self: *Chip8, amount: usize) bool {
     return false;
 }
 
+/// shortcut for `self.registers[z]`
+fn V(self: *Chip8, z: u16) *u8 {
+    return &self.registers[z];
+}
+
+/// the F register
+fn VF(self: *Chip8) *u8 {
+    return &self.registers[0xF];
+}
+
+/// program counter
+fn PC(self: *Chip8) *u16 {
+    return &self.program_counter;
+}
+
 fn fetch(self: *Chip8) u16 {
-    defer self.program_counter += 2;
+    const pc = self.PC();
+    defer pc.* += 2;
     var opcode: u16 = 0;
-    opcode |= self.memory[self.program_counter];
+    opcode |= self.memory[pc.*];
     opcode <<= 8;
-    opcode |= self.memory[self.program_counter + 1];
-    std.debug.print("pc = 0x{X:0>4}\topcode = 0x{X:0>4}\n", .{ self.program_counter, opcode });
+    opcode |= self.memory[pc.* + 1];
+    // std.debug.print("pc = 0x{X:0>4}\topcode = 0x{X:0>4}\n", .{ pc.*, opcode });
     return opcode;
 }
 
-fn execute(self: *Chip8, opcode: u16) void {
+fn execute(self: *Chip8, opcode: u16) !void {
     const kind: u4 = @truncate((opcode & 0xF000) >> 12); // 1st nibble
     const x: u16 = @truncate((opcode & 0x0F00) >> 8); // 2nd nibble
     const y: u16 = @truncate((opcode & 0x00F0) >> 4); // 3rd nibble
@@ -107,56 +121,62 @@ fn execute(self: *Chip8, opcode: u16) void {
     const nnn: u16 = @truncate(opcode & 0x0FFF); // 2nd, 3rd and 4th nibbles
 
     return switch (kind) {
-        0x0 => switch (n) { // check 4th nibble
+        0x0 => switch (n) { // check last nibble
             0x0 => { // clear screen
                 self.display.clear();
             },
             0xE => { // return from subroutine
-                self.program_counter = self.stack.pop();
+                self.PC().* = self.stack.pop();
             },
             else => unreachable,
         },
         0x1 => { // jump
-            self.program_counter = nnn;
+            self.PC().* = nnn;
         },
         0x2 => { // enter subroutine
-            self.stack.push(self.program_counter);
-            self.program_counter = nnn;
+            try self.stack.push(self.PC().*);
+            self.PC().* = nnn;
         },
         0x3 => { // skip if VX == NN
-            if (self.registers[x] == nn) {
-                self.program_counter += 2;
+            if (self.V(x).* == nn) {
+                self.PC().* += 2;
             }
         },
         0x4 => { // skip if VX != NN
-            if (self.registers[x] != nn) {
-                self.program_counter += 2;
+            if (self.V(x).* != nn) {
+                self.PC().* += 2;
             }
         },
         0x5 => { // skip if VX == VY
-            if (self.registers[x] == self.registers[y]) {
-                self.program_counter += 2;
+            if (self.V(x).* == self.V(y).*) {
+                self.PC().* += 2;
             }
         },
         0x6 => { // set
-            self.registers[x] = @truncate(nn);
+            self.V(x).* = @truncate(nn);
         },
         0x7 => { // add
-            self.registers[x] += @truncate(nn);
+            self.V(x).* += @truncate(nn);
+        },
+        0x8 => switch (n) { // check last nibble
+            0x0 => { // set VX to VY
+                self.V(x).* = self.V(y).*;
+            },
+            else => unreachable,
         },
         0x9 => { // skip if VX != VY
-            if (self.registers[x] != self.registers[y]) {
-                self.program_counter += 2;
+            if (self.V(x).* != self.V(y).*) {
+                self.PC().* += 2;
             }
         },
         0xA => { // set index
             self.index = nnn;
         },
         0xD => { // display
-            const vx = self.registers[x] % Display.x_dim;
-            var vy = self.registers[y] % Display.y_dim;
+            const vx = self.V(x).* % Display.x_dim;
+            var vy = self.V(y).* % Display.y_dim;
 
-            const vf = &self.registers[0xF];
+            const vf = self.VF();
             vf.* = 0;
 
             for (0..n) |i| {
