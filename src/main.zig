@@ -2,6 +2,7 @@ const std = @import("std");
 const raylib = @import("raylib.zig");
 const Chip8 = @import("chip8/Chip8.zig").Chip8;
 const Display = @import("chip8/Display.zig").Display;
+const KeyManager = @import("key_manager.zig").KeyManager;
 
 pub fn main() !void {
     std.debug.print("\n", .{});
@@ -16,7 +17,7 @@ pub fn main() !void {
 
     {
         var stack_mem: [32]u8 = undefined;
-        var chip8 = try Chip8.init(&stack_mem);
+        var chip8 = try Chip8.init(&stack_mem, KeyManager{});
         defer chip8.deinit();
 
         const rom = try Chip8.loadRom("roms/IBM Logo.ch8", allocator);
@@ -39,7 +40,7 @@ pub fn main() !void {
                 for (0..Display.x_dim) |x| {
                     for (0..Display.y_dim) |y| {
                         if (chip8.display.getXYScaled(x, y)) |scaled| {
-                            raylib.DrawRectangle(@intCast(scaled.@"0"), @intCast(scaled.@"1"), Display.scale, Display.scale, raylib.WHITE);
+                            raylib.DrawRectangle(@intCast(scaled[0]), @intCast(scaled[1]), Display.scale, Display.scale, raylib.WHITE);
                         }
                     }
                 }

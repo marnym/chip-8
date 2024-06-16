@@ -1,8 +1,11 @@
 const std = @import("std");
 const Display = @import("Display.zig").Display;
 const Stack = @import("Stack.zig").Stack;
+const KeyManager = @import("../key_manager.zig").KeyManager;
 
 pub const Chip8 = @This();
+
+const IsKeyPressedFn = fn (key: u4) bool;
 
 const font = [_]u8{
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -22,6 +25,10 @@ const font = [_]u8{
     0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 };
+const font_offset = 0x50;
+
+var prng = std.rand.DefaultPrng.init(8);
+const rand = prng.random();
 
 memory: [4096]u8,
 registers: [16]u8,
@@ -31,8 +38,9 @@ display: Display,
 stack: Stack,
 delay_timer: u8,
 sound_timer: u8,
+key_manager: KeyManager,
 
-pub fn init(stack_mem: *[32]u8) !Chip8 {
+pub fn init(stack_mem: *[32]u8, key_manager: KeyManager) !Chip8 {
     var chip8 = Chip8{
         .memory = std.mem.zeroes([4096]u8),
         .registers = std.mem.zeroes([16]u8),
@@ -42,9 +50,10 @@ pub fn init(stack_mem: *[32]u8) !Chip8 {
         .stack = try Stack.init(stack_mem),
         .delay_timer = 0,
         .sound_timer = 0,
+        .key_manager = key_manager,
     };
 
-    for (font, 0x50..0xA0) |f, i| {
+    for (font, font_offset..0xA0) |f, i| {
         chip8.memory[i] = f;
     }
 
@@ -69,10 +78,6 @@ pub fn load(self: *Chip8, rom: []const u8) void {
 /// returns `true` if this should be the last cycle
 pub fn cycle(self: *Chip8) !bool {
     const opcode = self.fetch();
-    // TODO: Remove hardcoded halt instruction for IBM
-    if (opcode == 0x1228) {
-        return true;
-    }
     try self.execute(opcode);
 
     if (self.delay_timer > 0) {
@@ -81,6 +86,11 @@ pub fn cycle(self: *Chip8) !bool {
     if (self.sound_timer > 0) {
         std.debug.print("BEEP!\n", .{});
         self.sound_timer -= 1;
+    }
+
+    const is_key_pressed_opcode = (opcode & 0xF0FF) == 0xF00A;
+    if (!is_key_pressed_opcode) {
+        self.key_manager.empty_keys_pressed();
     }
 
     return false;
@@ -114,10 +124,10 @@ fn fetch(self: *Chip8) u16 {
 
 fn execute(self: *Chip8, opcode: u16) !void {
     const kind: u4 = @truncate((opcode & 0xF000) >> 12); // 1st nibble
-    const x: u16 = @truncate((opcode & 0x0F00) >> 8); // 2nd nibble
-    const y: u16 = @truncate((opcode & 0x00F0) >> 4); // 3rd nibble
-    const n: u16 = @truncate((opcode & 0x000F)); // 4th nibble
-    const nn: u16 = @truncate(opcode & 0x00FF); // 3rd and 4th nibbles
+    const x: u4 = @truncate((opcode & 0x0F00) >> 8); // 2nd nibble
+    const y: u4 = @truncate((opcode & 0x00F0) >> 4); // 3rd nibble
+    const n: u4 = @truncate((opcode & 0x000F)); // 4th nibble
+    const nn: u8 = @truncate(opcode & 0x00FF); // 3rd and 4th nibbles
     const nnn: u16 = @truncate(opcode & 0x0FFF); // 2nd, 3rd and 4th nibbles
 
     return switch (kind) {
@@ -162,6 +172,48 @@ fn execute(self: *Chip8, opcode: u16) !void {
             0x0 => { // set VX to VY
                 self.V(x).* = self.V(y).*;
             },
+            0x1 => { // binary OR
+                self.V(x).* |= self.V(y).*;
+            },
+            0x2 => { // binary AND
+                self.V(x).* &= self.V(y).*;
+            },
+            0x3 => { // logical XOR
+                self.V(x).* ^= self.V(y).*;
+            },
+            0x4 => { // add (with overflow)
+                const vx = self.V(x);
+                const vy = self.V(y).*;
+                const result = @addWithOverflow(vx.*, vy);
+                vx.* = result[0];
+                self.VF().* = result[1];
+            },
+            0x5 => { // subtract VX - VY
+                const vx = self.V(x);
+                const vy = self.V(y).*;
+                self.VF().* = if (vx.* >= vy) 1 else 0;
+                vx.* -= vy;
+            },
+            0x6 => { // shift right
+                const vx = self.V(x);
+                vx.* = self.V(y).*;
+                const outshifted_bit = vx.* & 0x1;
+                vx.* >>= 1;
+                self.VF().* = outshifted_bit;
+            },
+            0x7 => { // subtract VY - VX
+                const vx = self.V(x);
+                const vy = self.V(y).*;
+                self.VF().* = if (vy >= vx.*) 1 else 0;
+                vx.* = vy - vx.*;
+            },
+            0xE => { // shift left
+                const vx = self.V(x);
+                vx.* = self.V(y).*;
+                const outshifted_bit = (vx.* >> 7) & 0x1;
+                vx.* >>= 1;
+                self.VF().* = outshifted_bit;
+            },
             else => unreachable,
         },
         0x9 => { // skip if VX != VY
@@ -171,6 +223,12 @@ fn execute(self: *Chip8, opcode: u16) !void {
         },
         0xA => { // set index
             self.index = nnn;
+        },
+        0xB => { // jump with offset
+            self.PC().* = nnn + self.V(0x0).*;
+        },
+        0xC => { // random
+            self.V(x).* = rand.int(u8) & nn;
         },
         0xD => { // display
             const vx = self.V(x).* % Display.x_dim;
@@ -202,6 +260,71 @@ fn execute(self: *Chip8, opcode: u16) !void {
                 }
             }
         },
-        else => unreachable,
+        0xE => {
+            const key_pressed = self.key_manager.isKeyPressed(@truncate(self.V(x).*));
+            switch (n) { // check last nibble
+                0x1 => { // skip if key in VX is *not* pressed
+                    if (!key_pressed) {
+                        self.PC().* += 2;
+                    }
+                },
+                0xE => { // skip if key in VX is pressed
+                    if (key_pressed) {
+                        self.PC().* += 2;
+                    }
+                },
+                else => unreachable,
+            }
+        },
+        0xF => {
+            switch (nn) { // check last two nibbles
+                0x07 => { // set VX to current value of delay timer
+                    self.V(x).* = self.delay_timer;
+                },
+                0x15 => { // set delay timer to value in VX
+                    self.delay_timer = self.V(x).*;
+                },
+                0x18 => { // set sound timer to value in VX
+                    self.sound_timer = self.V(x).*;
+                },
+                0x1E => { // add to index
+                    self.index += self.V(x).*;
+                    // Amiga version
+                    if (self.index > 0x1000) {
+                        self.VF().* = 1;
+                    }
+                },
+                0x0A => { // get key
+                    if (self.key_manager.getKey()) |key| {
+                        self.V(x).* = key;
+                    } else {
+                        self.PC().* -= 2;
+                    }
+                },
+                0x29 => { // font character
+                    // 5 bytes for each character
+                    self.index = font_offset + (5 * self.V(x).*);
+                },
+                0x33 => { // binary-coded decimal conversion
+                    const vx = self.V(x).*;
+                    const index = self.index;
+
+                    self.memory[index] = vx / 100 % 10;
+                    self.memory[index + 1] = vx / 10 % 10;
+                    self.memory[index + 2] = vx % 10;
+                },
+                0x55 => { // store memory
+                    for (0..x + 1) |i| {
+                        self.memory[self.index + i] = self.V(@truncate(i)).*;
+                    }
+                },
+                0x65 => { // load memory
+                    for (0..x + 1) |i| {
+                        self.V(@truncate(i)).* = self.memory[self.index + i];
+                    }
+                },
+                else => unreachable,
+            }
+        },
     };
 }
