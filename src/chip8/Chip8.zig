@@ -2,6 +2,9 @@ const std = @import("std");
 const Display = @import("Display.zig").Display;
 const Stack = @import("Stack.zig").Stack;
 const KeyManager = @import("../key_manager.zig").KeyManager;
+const op_code = @import("op_code.zig");
+const OpCode = op_code.OpCode;
+const Nibble = op_code.Nibble;
 
 pub const Chip8 = @This();
 
@@ -76,7 +79,8 @@ pub fn load(self: *Chip8, rom: []const u8) void {
 }
 
 pub fn cycle(self: *Chip8) !void {
-    const opcode = self.fetch();
+    const instruction = self.fetch();
+    const opcode = decode(instruction);
     try self.execute(opcode);
 
     if (self.delay_timer > 0) {
@@ -87,8 +91,7 @@ pub fn cycle(self: *Chip8) !void {
         self.sound_timer -= 1;
     }
 
-    const is_key_pressed_opcode = (opcode & 0xF0FF) == 0xF00A;
-    if (!is_key_pressed_opcode) {
+    if (opcode == OpCode.get_key) {
         self.key_manager.empty_keys_pressed();
     }
 }
@@ -119,119 +122,177 @@ fn fetch(self: *Chip8) u16 {
     return opcode;
 }
 
-fn execute(self: *Chip8, opcode: u16) !void {
-    const kind: u4 = @truncate((opcode & 0xF000) >> 12); // 1st nibble
-    const x: u4 = @truncate((opcode & 0x0F00) >> 8); // 2nd nibble
-    const y: u4 = @truncate((opcode & 0x00F0) >> 4); // 3rd nibble
-    const n: u4 = @truncate((opcode & 0x000F)); // 4th nibble
-    const nn: u8 = @truncate(opcode & 0x00FF); // 3rd and 4th nibbles
-    const nnn: u16 = @truncate(opcode & 0x0FFF); // 2nd, 3rd and 4th nibbles
+fn decode(instruction: u16) OpCode {
+    const kind: Nibble = @truncate((instruction & 0xF000) >> 12); // 1st nibble
+    const x: Nibble = @truncate((instruction & 0x0F00) >> 8); // 2nd nibble
+    const y: Nibble = @truncate((instruction & 0x00F0) >> 4); // 3rd nibble
+    const n: Nibble = @truncate((instruction & 0x000F)); // 4th nibble
+    const nn: u8 = @truncate(instruction & 0x00FF); // 3rd and 4th nibbles
+    const nnn: u12 = @truncate(instruction & 0x0FFF); // 2nd, 3rd and 4th nibbles
 
     return switch (kind) {
         0x0 => switch (n) { // check last nibble
-            0x0 => { // clear screen
-                self.display.clear();
-            },
-            0xE => { // return from subroutine
-                self.PC().* = self.stack.pop();
-            },
-            else => unreachable,
+            0x0 => OpCode{ .clear_screen = .{ .opcode = instruction } },
+            0xE => OpCode{ .subroutine_return = .{ .opcode = instruction } },
+            else => OpCode{ .invalid = .{ .opcode = instruction } },
         },
-        0x1 => { // jump
-            self.PC().* = nnn;
-        },
-        0x2 => { // enter subroutine
-            try self.stack.push(self.PC().*);
-            self.PC().* = nnn;
-        },
-        0x3 => { // skip if VX == NN
-            if (self.V(x).* == nn) {
-                self.PC().* += 2;
-            }
-        },
-        0x4 => { // skip if VX != NN
-            if (self.V(x).* != nn) {
-                self.PC().* += 2;
-            }
-        },
-        0x5 => { // skip if VX == VY
-            if (self.V(x).* == self.V(y).*) {
-                self.PC().* += 2;
-            }
-        },
-        0x6 => { // set
-            self.V(x).* = @truncate(nn);
-        },
-        0x7 => { // add
-            const vx = self.V(x);
-            vx.* = @addWithOverflow(vx.*, nn)[0];
-        },
+        0x1 => OpCode{ .jump = .{ .opcode = instruction, .nnn = nnn } },
+        0x2 => OpCode{ .subroutine_call = .{ .opcode = instruction, .nnn = nnn } },
+        0x3 => OpCode{ .skip_if_vx_eq_nn = .{ .opcode = instruction, .x = x, .nn = nn } },
+        0x4 => OpCode{ .skip_if_vx_neq_nn = .{ .opcode = instruction, .x = x, .nn = nn } },
+        0x5 => OpCode{ .skip_if_vx_eq_vy = .{ .opcode = instruction, .x = x, .y = y } },
+        0x6 => OpCode{ .set_vx_to_nn = .{ .opcode = instruction, .x = x, .nn = nn } },
+        0x7 => OpCode{ .add_no_carry = .{ .opcode = instruction, .x = x, .nn = nn } },
         0x8 => switch (n) { // check last nibble
-            0x0 => { // set VX to VY
-                self.V(x).* = self.V(y).*;
-            },
-            0x1 => { // binary OR
-                self.V(x).* |= self.V(y).*;
-            },
-            0x2 => { // binary AND
-                self.V(x).* &= self.V(y).*;
-            },
-            0x3 => { // logical XOR
-                self.V(x).* ^= self.V(y).*;
-            },
-            0x4 => { // add (with overflow)
-                const vx = self.V(x);
-                const vy = self.V(y).*;
-                const result = @addWithOverflow(vx.*, vy);
-                vx.* = result[0];
-                self.VF().* = result[1];
-            },
-            0x5 => { // subtract VX - VY
-                const vx = self.V(x);
-                const vy = self.V(y).*;
-                self.VF().* = if (vx.* >= vy) 1 else 0;
-                vx.* = @subWithOverflow(vx.*, vy)[0];
-            },
-            0x6 => { // shift right
-                const vx = self.V(x);
-                self.VF().* = vx.* & 0x1;
-                vx.* >>= 1;
-            },
-            0x7 => { // subtract VY - VX
-                const vx = self.V(x);
-                const vy = self.V(y).*;
-                self.VF().* = if (vy >= vx.*) 1 else 0;
-                vx.* = @subWithOverflow(vy, vx.*)[0];
-            },
-            0xE => { // shift left
-                const vx = self.V(x);
-                self.VF().* = (vx.* >> 7) & 0x1;
-                vx.* <<= 1;
-            },
-            else => unreachable,
+            0x0 => OpCode{ .set_vx_to_vy = .{ .opcode = instruction, .x = x, .y = y } },
+            0x1 => OpCode{ .binary_or = .{ .opcode = instruction, .x = x, .y = y } },
+            0x2 => OpCode{ .binary_and = .{ .opcode = instruction, .x = x, .y = y } },
+            0x3 => OpCode{ .logical_xor = .{ .opcode = instruction, .x = x, .y = y } },
+            0x4 => OpCode{ .add_carry = .{ .opcode = instruction, .x = x, .y = y } },
+            0x5 => OpCode{ .subtract_vx_vy = .{ .opcode = instruction, .x = x, .y = y } },
+            0x6 => OpCode{ .shift_right = .{ .opcode = instruction, .x = x, .y = y } },
+            0x7 => OpCode{ .subtract_vy_vx = .{ .opcode = instruction, .x = x, .y = y } },
+            0xE => OpCode{ .shift_left = .{ .opcode = instruction, .x = x, .y = y } },
+            else => OpCode{ .invalid = .{ .opcode = instruction } },
         },
-        0x9 => { // skip if VX != VY
-            if (self.V(x).* != self.V(y).*) {
+        0x9 => OpCode{ .skip_if_vx_neq_vy = .{ .opcode = instruction, .x = x, .y = y } },
+        0xA => OpCode{ .set_index = .{ .opcode = instruction, .nnn = nnn } },
+        0xB => OpCode{ .jump_offset = .{ .opcode = instruction, .nnn = nnn } },
+        0xC => OpCode{ .random = .{ .opcode = instruction, .x = x, .nn = nn } },
+        0xD => OpCode{ .display = .{ .opcode = instruction, .x = x, .y = y, .n = n } },
+        0xE => switch (n) { // check last nibble
+            0x1 => OpCode{ .skip_if_pressed = .{ .opcode = instruction, .x = x } },
+            0xE => OpCode{ .skip_if_not_pressed = .{ .opcode = instruction, .x = x } },
+            else => OpCode{ .invalid = .{ .opcode = instruction } },
+        },
+        0xF => switch (nn) { // check last two nibbles
+            0x07 => OpCode{ .timer_delay_get = .{ .opcode = instruction, .x = x } },
+            0x15 => OpCode{ .timer_delay_set = .{ .opcode = instruction, .x = x } },
+            0x18 => OpCode{ .timer_sound_set = .{ .opcode = instruction, .x = x } },
+            0x1E => OpCode{ .add_to_index = .{ .opcode = instruction, .x = x } },
+            0x0A => OpCode{ .get_key = .{ .opcode = instruction, .x = x } },
+            0x29 => OpCode{ .font_char = .{ .opcode = instruction, .x = x } },
+            0x33 => OpCode{ .binary_decimal_conversion = .{ .opcode = instruction, .x = x } },
+            0x55 => OpCode{ .mem_store = .{ .opcode = instruction, .x = x } },
+            0x65 => OpCode{ .mem_load = .{ .opcode = instruction, .x = x } },
+            else => OpCode{ .invalid = .{ .opcode = instruction } },
+        },
+    };
+}
+
+fn execute(self: *Chip8, opcode: OpCode) !void {
+    return switch (opcode) {
+        .clear_screen => {
+            self.display.clear();
+        },
+
+        .jump => |op| {
+            self.PC().* = op.nnn;
+        },
+
+        .subroutine_call => |op| {
+            try self.stack.push(self.PC().*);
+            self.PC().* = op.nnn;
+        },
+        .subroutine_return => {
+            self.PC().* = self.stack.pop();
+        },
+
+        .skip_if_vx_eq_nn => |op| {
+            if (self.V(op.x).* == op.nn) {
                 self.PC().* += 2;
             }
         },
-        0xA => { // set index
-            self.index = nnn;
+        .skip_if_vx_neq_nn => |op| {
+            if (self.V(op.x).* != op.nn) {
+                self.PC().* += 2;
+            }
         },
-        0xB => { // jump with offset
-            self.PC().* = nnn + self.V(0x0).*;
+        .skip_if_vx_eq_vy => |op| {
+            if (self.V(op.x).* == self.V(op.y).*) {
+                self.PC().* += 2;
+            }
         },
-        0xC => { // random
-            self.V(x).* = rand.int(u8) & nn;
+        .skip_if_vx_neq_vy => |op| {
+            if (self.V(op.x).* != self.V(op.y).*) {
+                self.PC().* += 2;
+            }
         },
-        0xD => { // display
-            const vx = self.V(x).* % Display.x_dim;
-            var vy = self.V(y).* % Display.y_dim;
+
+        .set_vx_to_nn => |op| {
+            self.V(op.x).* = @truncate(op.nn);
+        },
+
+        .add_no_carry => |op| {
+            const vx = self.V(op.x);
+            vx.* = @addWithOverflow(vx.*, op.nn)[0];
+        },
+
+        .set_vx_to_vy => |op| {
+            self.V(op.x).* = self.V(op.y).*;
+        },
+
+        .binary_or => |op| {
+            self.V(op.x).* |= self.V(op.y).*;
+        },
+        .binary_and => |op| {
+            self.V(op.x).* &= self.V(op.y).*;
+        },
+        .logical_xor => |op| {
+            self.V(op.x).* ^= self.V(op.y).*;
+        },
+        .add_carry => |op| {
+            const vx = self.V(op.x);
+            const vy = self.V(op.y).*;
+            const result = @addWithOverflow(vx.*, vy);
+            vx.* = result[0];
+            self.VF().* = result[1];
+        },
+
+        .subtract_vx_vy => |op| {
+            const vx = self.V(op.x);
+            const vy = self.V(op.y).*;
+            self.VF().* = if (vx.* >= vy) 1 else 0;
+            vx.* = @subWithOverflow(vx.*, vy)[0];
+        },
+        .subtract_vy_vx => |op| {
+            const vx = self.V(op.x);
+            const vy = self.V(op.y).*;
+            self.VF().* = if (vy >= vx.*) 1 else 0;
+            vx.* = @subWithOverflow(vy, vx.*)[0];
+        },
+
+        .shift_right => |op| {
+            const vx = self.V(op.x);
+            self.VF().* = vx.* & 0x1;
+            vx.* >>= 1;
+        },
+        .shift_left => |op| {
+            const vx = self.V(op.x);
+            self.VF().* = (vx.* >> 7) & 0x1;
+            vx.* <<= 1;
+        },
+
+        .set_index => |op| {
+            self.index = op.nnn;
+        },
+
+        .jump_offset => |op| {
+            self.PC().* = op.nnn + self.V(0x0).*;
+        },
+
+        .random => |op| {
+            self.V(op.x).* = rand.int(u8) & op.nn;
+        },
+
+        .display => |op| {
+            const vx = self.V(op.x).* % Display.x_dim;
+            var vy = self.V(op.y).* % Display.y_dim;
 
             const vf = self.VF();
             vf.* = 0;
 
-            for (0..n) |i| {
+            for (0..op.n) |i| {
                 const sprite_row = self.memory[self.index + i];
                 for (0..8) |bit| {
                     const sprite_on = (sprite_row >> @truncate(7 - bit)) & 1 == 1;
@@ -254,71 +315,70 @@ fn execute(self: *Chip8, opcode: u16) !void {
                 }
             }
         },
-        0xE => {
-            const key_pressed = self.key_manager.isKeyPressed(@truncate(self.V(x).*));
-            switch (n) { // check last nibble
-                0x1 => { // skip if key in VX is *not* pressed
-                    if (!key_pressed) {
-                        self.PC().* += 2;
-                    }
-                },
-                0xE => { // skip if key in VX is pressed
-                    if (key_pressed) {
-                        self.PC().* += 2;
-                    }
-                },
-                else => unreachable,
+
+        .skip_if_pressed => |op| {
+            const key_pressed = self.key_manager.isKeyPressed(@truncate(self.V(op.x).*));
+            if (key_pressed) {
+                self.PC().* += 2;
             }
         },
-        0xF => {
-            switch (nn) { // check last two nibbles
-                0x07 => { // set VX to current value of delay timer
-                    self.V(x).* = self.delay_timer;
-                },
-                0x15 => { // set delay timer to value in VX
-                    self.delay_timer = self.V(x).*;
-                },
-                0x18 => { // set sound timer to value in VX
-                    self.sound_timer = self.V(x).*;
-                },
-                0x1E => { // add to index
-                    self.index += self.V(x).*;
-                    // Amiga version
-                    if (self.index > 0x1000) {
-                        self.VF().* = 1;
-                    }
-                },
-                0x0A => { // get key
-                    if (self.key_manager.getKey()) |key| {
-                        self.V(x).* = key;
-                    } else {
-                        self.PC().* -= 2;
-                    }
-                },
-                0x29 => { // font character
-                    // 5 bytes for each character
-                    self.index = font_offset + (5 * self.V(x).*);
-                },
-                0x33 => { // binary-coded decimal conversion
-                    const vx = self.V(x).*;
-                    const index = self.index;
-
-                    self.memory[index] = vx / 100 % 10;
-                    self.memory[index + 1] = vx / 10 % 10;
-                    self.memory[index + 2] = vx % 10;
-                },
-                0x55 => { // store memory
-                    for (0..x + 1) |i| {
-                        self.memory[self.index + i] = self.V(@truncate(i)).*;
-                    }
-                },
-                0x65 => { // load memory
-                    for (0..x + 1) |i| {
-                        self.V(@truncate(i)).* = self.memory[self.index + i];
-                    }
-                },
-                else => unreachable,
+        .skip_if_not_pressed => |op| {
+            const key_pressed = self.key_manager.isKeyPressed(@truncate(self.V(op.x).*));
+            if (!key_pressed) {
+                self.PC().* += 2;
             }
+        },
+
+        .timer_delay_get => |op| {
+            self.V(op.x).* = self.delay_timer;
+        },
+        .timer_delay_set => |op| {
+            self.delay_timer = self.V(op.x).*;
+        },
+        .timer_sound_set => |op| {
+            self.sound_timer = self.V(op.x).*;
+        },
+
+        .add_to_index => |op| {
+            self.index += self.V(op.x).*;
+            // Amiga version
+            if (self.index > 0x1000) {
+                self.VF().* = 1;
+            }
+        },
+
+        .get_key => |op| {
+            if (self.key_manager.getKey()) |key| {
+                self.V(op.x).* = key;
+            } else {
+                self.PC().* -= 2;
+            }
+        },
+        .font_char => |op| {
+            // 5 bytes for each character
+            self.index = font_offset + (5 * self.V(op.x).*);
+        },
+
+        .binary_decimal_conversion => |op| {
+            const vx = self.V(op.x).*;
+            const index = self.index;
+
+            self.memory[index] = vx / 100 % 10;
+            self.memory[index + 1] = vx / 10 % 10;
+            self.memory[index + 2] = vx % 10;
+        },
+        .mem_store => |op| {
+            for (0..op.x + 1) |i| {
+                self.memory[self.index + i] = self.V(@truncate(i)).*;
+            }
+        },
+        .mem_load => |op| {
+            for (0..op.x + 1) |i| {
+                self.V(@truncate(i)).* = self.memory[self.index + i];
+            }
+        },
+        .invalid => |op| {
+            std.debug.print("invalid instruction {}\n", .{op});
         },
     };
 }
