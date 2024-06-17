@@ -7,12 +7,9 @@ stack: std.ArrayList(ItemType),
 
 pub const StackError = error{CapacityError};
 
-/// The Stack has place for 16 * u16 = 32 * u8.
-/// Needs to take `[]u8` as param, since FixedBufferAllocator only accepts `[]u8`
-pub fn init(buf: *[32]u8) !Stack {
-    var fba = std.heap.FixedBufferAllocator.init(buf);
+pub fn init(allocator: std.mem.Allocator) !Stack {
     return Stack{
-        .stack = try std.ArrayList(ItemType).initCapacity(fba.allocator(), 16),
+        .stack = try std.ArrayList(ItemType).initCapacity(allocator, 16),
     };
 }
 

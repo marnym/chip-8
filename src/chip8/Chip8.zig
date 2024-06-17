@@ -43,14 +43,14 @@ delay_timer: u8,
 sound_timer: u8,
 key_manager: KeyManager,
 
-pub fn init(stack_mem: *[32]u8, key_manager: KeyManager) !Chip8 {
+pub fn init(key_manager: KeyManager, allocator: std.mem.Allocator) !Chip8 {
     var chip8 = Chip8{
         .memory = std.mem.zeroes([4096]u8),
         .registers = std.mem.zeroes([16]u8),
         .index = 0,
         .program_counter = 0,
         .display = std.mem.zeroes(Display),
-        .stack = try Stack.init(stack_mem),
+        .stack = try Stack.init(allocator),
         .delay_timer = 0,
         .sound_timer = 0,
         .key_manager = key_manager,

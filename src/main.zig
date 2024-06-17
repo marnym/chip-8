@@ -27,25 +27,22 @@ pub fn main() !void {
     // perfect for decrementing timers 60 times per second
     raylib.SetTargetFPS(60);
 
-    {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        const allocator = gpa.allocator();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
 
-        var stack_mem: [32]u8 = undefined;
-        var chip8 = try Chip8.init(&stack_mem, KeyManager{});
-        defer chip8.deinit();
+    var chip8 = try Chip8.init(KeyManager{}, allocator);
+    defer chip8.deinit();
 
-        const rom = try Chip8.loadRomFromFile("roms/IBM Logo.ch8", allocator);
-        defer allocator.free(rom);
+    const rom = try Chip8.loadRomFromFile("roms/test_opcode.ch8", allocator);
+    defer allocator.free(rom);
 
-        chip8.loadRom(rom);
+    chip8.loadRom(rom);
 
-        const instructions_per_second = 12;
-        while (!raylib.WindowShouldClose()) {
-            for (0..instructions_per_second) |_| {
-                try chip8.cycle();
-                render(chip8);
-            }
+    const instructions_per_frame = 12;
+    while (!raylib.WindowShouldClose()) {
+        for (0..instructions_per_frame) |_| {
+            try chip8.cycle();
         }
+        render(chip8);
     }
 }
