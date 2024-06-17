@@ -33,16 +33,26 @@ pub fn main() !void {
     var chip8 = try Chip8.init(KeyManager{}, allocator);
     defer chip8.deinit();
 
-    const rom = try Chip8.loadRomFromFile("roms/test_opcode.ch8", allocator);
-    defer allocator.free(rom);
-
-    chip8.loadRom(rom);
-
     const instructions_per_frame = 12;
     while (!raylib.WindowShouldClose()) {
+        defer render(chip8);
+
         for (0..instructions_per_frame) |_| {
             try chip8.cycle();
         }
-        render(chip8);
+
+        if (raylib.IsFileDropped()) {
+            const droppedFiles = raylib.LoadDroppedFiles();
+            defer raylib.UnloadDroppedFiles(droppedFiles);
+
+            // only intrested in the first file
+            const file_c = droppedFiles.paths[0];
+            const file: []const u8 = std.mem.span(file_c);
+
+            const rom = try Chip8.loadRomFromFile(file, allocator);
+            defer allocator.free(rom);
+
+            chip8.loadRom(rom);
+        }
     }
 }

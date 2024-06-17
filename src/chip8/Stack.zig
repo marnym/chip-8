@@ -28,3 +28,8 @@ pub fn push(self: *Stack, item: ItemType) StackError!void {
 pub fn pop(self: *Stack) ItemType {
     return self.stack.pop();
 }
+
+/// empties the stack
+pub fn empty(self: *Stack) void {
+    while (self.stack.popOrNull() != null) {}
+}

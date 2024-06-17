@@ -29,6 +29,7 @@ const font = [_]u8{
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 };
 const font_offset = 0x50;
+const load_offset = 0x200;
 
 var prng = std.rand.DefaultPrng.init(8);
 const rand = prng.random();
@@ -44,7 +45,7 @@ sound_timer: u8,
 key_manager: KeyManager,
 
 pub fn init(key_manager: KeyManager, allocator: std.mem.Allocator) !Chip8 {
-    var chip8 = Chip8{
+    return Chip8{
         .memory = std.mem.zeroes([4096]u8),
         .registers = std.mem.zeroes([16]u8),
         .index = 0,
@@ -55,16 +56,16 @@ pub fn init(key_manager: KeyManager, allocator: std.mem.Allocator) !Chip8 {
         .sound_timer = 0,
         .key_manager = key_manager,
     };
-
-    for (font, font_offset..0xA0) |f, i| {
-        chip8.memory[i] = f;
-    }
-
-    return chip8;
 }
 
 pub fn deinit(self: *Chip8) void {
     self.stack.deinit();
+}
+
+fn loadFont(self: *Chip8) void {
+    for (font, font_offset..0xA0) |f, i| {
+        self.memory[i] = f;
+    }
 }
 
 pub fn loadRomFromFile(filename: []const u8, allocator: std.mem.Allocator) ![]u8 {
@@ -73,12 +74,31 @@ pub fn loadRomFromFile(filename: []const u8, allocator: std.mem.Allocator) ![]u8
 }
 
 pub fn loadRom(self: *Chip8, rom: []const u8) void {
-    const load_location = 0x200;
-    std.mem.copyForwards(u8, self.memory[load_location..], rom);
-    self.program_counter = load_location;
+    self.reset();
+    std.mem.copyForwards(u8, self.memory[load_offset..], rom);
+    self.program_counter = load_offset;
+}
+
+pub fn reset(self: *Chip8) void {
+    self.memory = std.mem.zeroes([4096]u8);
+    self.registers = std.mem.zeroes([16]u8);
+    self.index = 0;
+    self.program_counter = 0;
+    self.display = std.mem.zeroes(Display);
+    self.delay_timer = 0;
+    self.sound_timer = 0;
+
+    self.loadFont();
+
+    self.stack.empty();
 }
 
 pub fn cycle(self: *Chip8) !void {
+    // return if nothing is loaded
+    if (self.program_counter == 0x0000) {
+        return;
+    }
+
     const instruction = self.fetch();
     const opcode = decode(instruction);
     try self.execute(opcode);
@@ -341,7 +361,7 @@ fn execute(self: *Chip8, opcode: OpCode) !void {
         .add_to_index => |op| {
             self.index += self.V(op.x).*;
             // Amiga version
-            if (self.index > 0x1000) {
+            if (self.index > 0x0FFF) {
                 self.VF().* = 1;
             }
         },

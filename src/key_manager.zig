@@ -47,6 +47,6 @@ pub fn getKey(_: KeyManager) ?u4 {
 }
 
 pub fn empty_keys_pressed(self: KeyManager) void {
-    var key: ?u4 = 0;
+    var key = self.getKey();
     while (key != null) : (key = self.getKey()) {}
 }
