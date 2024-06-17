@@ -94,8 +94,8 @@ pub fn reset(self: *Chip8) void {
 }
 
 pub fn cycle(self: *Chip8) !void {
-    // return if nothing is loaded
-    if (self.program_counter == 0x0000) {
+    const nothing_loaded = self.program_counter == 0x0000;
+    if (nothing_loaded) {
         return;
     }
 
@@ -111,7 +111,7 @@ pub fn cycle(self: *Chip8) !void {
         self.sound_timer -= 1;
     }
 
-    if (opcode == OpCode.get_key) {
+    if (opcode != .get_key) {
         self.key_manager.empty_keys_pressed();
     }
 }
