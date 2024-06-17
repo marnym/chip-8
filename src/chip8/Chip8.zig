@@ -67,12 +67,12 @@ pub fn deinit(self: *Chip8) void {
     self.stack.deinit();
 }
 
-pub fn loadRom(filename: []const u8, allocator: std.mem.Allocator) ![]u8 {
+pub fn loadRomFromFile(filename: []const u8, allocator: std.mem.Allocator) ![]u8 {
     const cwd = std.fs.cwd();
     return try cwd.readFileAlloc(allocator, filename, 4096);
 }
 
-pub fn load(self: *Chip8, rom: []const u8) void {
+pub fn loadRom(self: *Chip8, rom: []const u8) void {
     const load_location = 0x200;
     std.mem.copyForwards(u8, self.memory[load_location..], rom);
     self.program_counter = load_location;
@@ -118,7 +118,6 @@ fn fetch(self: *Chip8) u16 {
     opcode |= self.memory[pc.*];
     opcode <<= 8;
     opcode |= self.memory[pc.* + 1];
-    // std.debug.print("pc = 0x{X:0>4}\topcode = 0x{X:0>4}\n", .{ pc.*, opcode });
     return opcode;
 }
 

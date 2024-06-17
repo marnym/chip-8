@@ -35,10 +35,10 @@ pub fn main() !void {
         var chip8 = try Chip8.init(&stack_mem, KeyManager{});
         defer chip8.deinit();
 
-        const rom = try Chip8.loadRom("roms/IBM Logo.ch8", allocator);
+        const rom = try Chip8.loadRomFromFile("roms/IBM Logo.ch8", allocator);
         defer allocator.free(rom);
 
-        chip8.load(rom);
+        chip8.loadRom(rom);
 
         const instructions_per_second = 12;
         while (!raylib.WindowShouldClose()) {
